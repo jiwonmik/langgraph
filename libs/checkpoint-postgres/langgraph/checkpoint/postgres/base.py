@@ -25,7 +25,7 @@ MIGRATIONS = [
     """CREATE TABLE IF NOT EXISTS checkpoint_migrations (
     v INTEGER PRIMARY KEY
 );""",
-    """CREATE TABLE IF NOT EXISTS checkpoints (
+    """CREATE TABLE IF NOT EXISTS melodi.checkpoints (
     thread_id TEXT NOT NULL,
     checkpoint_ns TEXT NOT NULL DEFAULT '',
     checkpoint_id TEXT NOT NULL,
@@ -35,7 +35,7 @@ MIGRATIONS = [
     metadata JSONB NOT NULL DEFAULT '{}',
     PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id)
 );""",
-    """CREATE TABLE IF NOT EXISTS checkpoint_blobs (
+    """CREATE TABLE IF NOT EXISTS melodi.checkpoint_blobs (
     thread_id TEXT NOT NULL,
     checkpoint_ns TEXT NOT NULL DEFAULT '',
     channel TEXT NOT NULL,
@@ -44,7 +44,7 @@ MIGRATIONS = [
     blob BYTEA,
     PRIMARY KEY (thread_id, checkpoint_ns, channel, version)
 );""",
-    """CREATE TABLE IF NOT EXISTS checkpoint_writes (
+    """CREATE TABLE IF NOT EXISTS melodi.checkpoint_writes (
     thread_id TEXT NOT NULL,
     checkpoint_ns TEXT NOT NULL DEFAULT '',
     checkpoint_id TEXT NOT NULL,
@@ -55,7 +55,7 @@ MIGRATIONS = [
     blob BYTEA NOT NULL,
     PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id, task_id, idx)
 );""",
-    "ALTER TABLE checkpoint_blobs ALTER COLUMN blob DROP not null;",
+    "ALTER TABLE melodi.checkpoint_blobs ALTER COLUMN blob DROP not null;",
 ]
 
 SELECT_SQL = f"""
@@ -69,38 +69,38 @@ select
     (
         select array_agg(array[bl.channel::bytea, bl.type::bytea, bl.blob])
         from jsonb_each_text(checkpoint -> 'channel_versions')
-        inner join checkpoint_blobs bl
-            on bl.thread_id = checkpoints.thread_id
-            and bl.checkpoint_ns = checkpoints.checkpoint_ns
+        inner join melodi.checkpoint_blobs bl
+            on bl.thread_id = melodi.checkpoints.thread_id
+            and bl.checkpoint_ns = melodi.checkpoints.checkpoint_ns
             and bl.channel = jsonb_each_text.key
             and bl.version = jsonb_each_text.value
     ) as channel_values,
     (
         select
         array_agg(array[cw.task_id::text::bytea, cw.channel::bytea, cw.type::bytea, cw.blob] order by cw.task_id, cw.idx)
-        from checkpoint_writes cw
-        where cw.thread_id = checkpoints.thread_id
-            and cw.checkpoint_ns = checkpoints.checkpoint_ns
-            and cw.checkpoint_id = checkpoints.checkpoint_id
+        from melodi.checkpoint_writes cw
+        where cw.thread_id = melodi.checkpoints.thread_id
+            and cw.checkpoint_ns = melodi.checkpoints.checkpoint_ns
+            and cw.checkpoint_id = melodi.checkpoints.checkpoint_id
     ) as pending_writes,
     (
         select array_agg(array[cw.type::bytea, cw.blob] order by cw.task_id, cw.idx)
-        from checkpoint_writes cw
-        where cw.thread_id = checkpoints.thread_id
-            and cw.checkpoint_ns = checkpoints.checkpoint_ns
-            and cw.checkpoint_id = checkpoints.parent_checkpoint_id
+        from melodi.checkpoint_writes cw
+        where cw.thread_id = melodi.checkpoints.thread_id
+            and cw.checkpoint_ns = melodi.checkpoints.checkpoint_ns
+            and cw.checkpoint_id = melodi.checkpoints.parent_checkpoint_id
             and cw.channel = '{TASKS}'
     ) as pending_sends
-from checkpoints """
+from melodi.checkpoints """
 
 UPSERT_CHECKPOINT_BLOBS_SQL = """
-    INSERT INTO checkpoint_blobs (thread_id, checkpoint_ns, channel, version, type, blob)
+    INSERT INTO melodi.checkpoint_blobs (thread_id, checkpoint_ns, channel, version, type, blob)
     VALUES (%s, %s, %s, %s, %s, %s)
     ON CONFLICT (thread_id, checkpoint_ns, channel, version) DO NOTHING
 """
 
 UPSERT_CHECKPOINTS_SQL = """
-    INSERT INTO checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, checkpoint, metadata)
+    INSERT INTO melodi.checkpoints (thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, checkpoint, metadata)
     VALUES (%s, %s, %s, %s, %s, %s)
     ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id)
     DO UPDATE SET
@@ -109,7 +109,7 @@ UPSERT_CHECKPOINTS_SQL = """
 """
 
 UPSERT_CHECKPOINT_WRITES_SQL = """
-    INSERT INTO checkpoint_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob)
+    INSERT INTO melodi.checkpoint_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id, task_id, idx) DO UPDATE SET
         channel = EXCLUDED.channel,
@@ -118,7 +118,7 @@ UPSERT_CHECKPOINT_WRITES_SQL = """
 """
 
 INSERT_CHECKPOINT_WRITES_SQL = """
-    INSERT INTO checkpoint_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob)
+    INSERT INTO melodi.checkpoint_writes (thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel, type, blob)
     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (thread_id, checkpoint_ns, checkpoint_id, task_id, idx) DO NOTHING
 """
